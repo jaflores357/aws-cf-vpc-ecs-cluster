@@ -1,0 +1,110 @@
+Description: >
+  This is an example of a long running ECS service that serves a JSON API of products.
+
+Parameters:
+
+  Prefix:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+
+  VPC:
+    Description: The VPC that the ECS cluster is deployed to
+    Type: String
+
+  ECSCluster:
+    Description: The ECS Cluster ID that this service should run on
+    Type: String
+
+  DesiredCount:
+    Description: How many instances of this task should we run across our cluster?
+    Type: Number
+    Default: 2
+
+  ECSTasksRole:
+    Description: ECS Tasks Role
+    Type: String
+    
+  ListenerHTTP: 
+    Description: The Application Load Balancer HTTP listener to register with
+    Type: String
+    
+Resources:
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      ServiceName: !Join
+        - '-'
+        - - !Ref Prefix
+          - haproxy
+      SchedulingStrategy: REPLICA      
+      Role: !Ref ECSTasksRole
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref TaskDefinition
+      LoadBalancers:
+        - ContainerName: "haproxy"
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: haproxy
+      ContainerDefinitions:
+        - Name: haproxy
+          Essential: true
+          Image: 1234567890.dkr.ecr.sa-east-1.amazonaws.com/haproxy:13
+          Memory: 128
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join
+        - '-'
+        - - !Ref Prefix
+          - haproxy
+      RetentionInDays: 30
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPC
+      Name: !Join
+        - '-'
+        - - !Ref 'Prefix'
+          - haproxy
+      Port: 80
+      Protocol: HTTP
+      Matcher:
+        HttpCode: 200-302
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+
+  ListenerRule01:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ListenerHTTP
+      Priority: 901
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /api/*
+            - /charge*
+            - /renew*
+            - /bundle*
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+
+
+
